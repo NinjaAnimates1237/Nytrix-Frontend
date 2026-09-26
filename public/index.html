@@ -1,12 +1,238 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>NytrixNinja</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Sign in to your NytrixNinja account.">
+  <title>Sign in · NytrixNinja</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #1c1c1a;
+      background: #f3f0e8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    main {
+      width: min(100%, 420px);
+      padding: 34px;
+      background: #fffdf7;
+      border: 2px solid #1c1c1a;
+      border-radius: 10px;
+      box-shadow: 7px 7px 0 #1c1c1a;
+    }
+
+    a { color: #316ada; font-weight: 700; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: #316ada;
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    h1 { margin: 0; font-size: 34px; letter-spacing: -1px; }
+    .intro { margin: 10px 0 24px; color: #6f6d65; line-height: 1.5; }
+
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 22px; }
+
+    .tab, button {
+      min-height: 44px;
+      border: 2px solid #1c1c1a;
+      border-radius: 6px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .tab { color: #1c1c1a; background: transparent; }
+    .tab[aria-selected="true"] { color: white; background: #316ada; }
+
+    label { display: block; margin: 0 0 7px; font-size: 14px; font-weight: 700; }
+
+    input {
+      width: 100%;
+      min-height: 46px;
+      margin: 0 0 18px;
+      padding: 10px 12px;
+      border: 1px solid #aaa69b;
+      border-radius: 5px;
+      background: white;
+      font: inherit;
+    }
+
+    input:focus { outline: 3px solid #316ada55; border-color: #316ada; }
+
+    #submit-button {
+      width: 100%;
+      color: white;
+      background: #e92843;
+      box-shadow: 3px 3px 0 #1c1c1a;
+    }
+
+    button:disabled { opacity: 0.6; cursor: wait; }
+
+    #message {
+      min-height: 24px;
+      margin: 16px 0 0;
+      color: #6f6d65;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    #message[data-error="true"] { color: #b42318; }
+    #message[data-success="true"] { color: #187044; }
+
+    .fine-print { margin: 18px 0 0; color: #6f6d65; font-size: 12px; line-height: 1.5; }
+    #signed-in { text-align: center; }
+    #sign-out { width: 100%; margin: 20px 0; color: #1c1c1a; background: #f5ce55; }
+
+    @media (max-width: 420px) { main { padding: 26px 20px; } }
+  </style>
 </head>
 <body>
-  <h1>Welcome to NytrixNinja</h1>
-	<p><a href="/auth/">Sign in or create an account</a></p>
+  <main>
+    <p class="eyebrow">NytrixNinja account</p>
+    <section id="auth-panel">
+      <h1 id="heading">Sign in</h1>
+      <p class="intro">Use your username and password. No email is needed.</p>
+
+      <div class="tabs" role="tablist" aria-label="Account action">
+        <button class="tab" id="login-tab" type="button" role="tab" aria-selected="true">Sign in</button>
+        <button class="tab" id="signup-tab" type="button" role="tab" aria-selected="false">Create account</button>
+      </div>
+
+      <form id="auth-form">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" minlength="3" maxlength="24" pattern="[A-Za-z0-9_.-]{3,24}" required>
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" minlength="10" maxlength="72" required>
+
+        <button id="submit-button" type="submit">Sign in</button>
+      </form>
+      <p id="message" role="status" aria-live="polite"></p>
+      <p class="fine-print">Passwords are stored as bcrypt hashes, not plain text. Without an email address, there is no self-service password reset.</p>
+    </section>
+
+    <section id="signed-in" hidden>
+      <h1>You're signed in</h1>
+      <p class="intro">Signed in as <strong id="account-name"></strong>.</p>
+      <button id="sign-out" type="button">Sign out</button>
+      <p><a href="/">Back to NytrixNinja</a></p>
+    </section>
+  </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+    import {
+      getAuth,
+      onAuthStateChanged,
+      signInWithCustomToken,
+      signOut,
+    } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+
+    // Copy the Web app config from Firebase Console → Project settings → Your apps.
+    // These identifiers are public; never put a service-account key in this page.
+    const firebaseConfig = {
+      apiKey: "PASTE_WEB_API_KEY_HERE",
+      authDomain: "nytrixninja.firebaseapp.com",
+      projectId: "nytrixninja",
+      appId: "PASTE_WEB_APP_ID_HERE",
+    };
+
+    const form = document.querySelector("#auth-form");
+    const loginTab = document.querySelector("#login-tab");
+    const signupTab = document.querySelector("#signup-tab");
+    const heading = document.querySelector("#heading");
+    const submitButton = document.querySelector("#submit-button");
+    const message = document.querySelector("#message");
+    const authPanel = document.querySelector("#auth-panel");
+    const signedInPanel = document.querySelector("#signed-in");
+    let action = "login";
+    let auth = null;
+
+    function showMessage(text, kind = "") {
+      message.textContent = text;
+      message.dataset.error = String(kind === "error");
+      message.dataset.success = String(kind === "success");
+    }
+
+    function setAction(nextAction) {
+      action = nextAction;
+      const signingUp = action === "signup";
+      heading.textContent = signingUp ? "Create account" : "Sign in";
+      submitButton.textContent = signingUp ? "Create account" : "Sign in";
+      document.querySelector("#password").autocomplete = signingUp ? "new-password" : "current-password";
+      loginTab.setAttribute("aria-selected", String(!signingUp));
+      signupTab.setAttribute("aria-selected", String(signingUp));
+      showMessage("");
+    }
+
+    loginTab.addEventListener("click", () => setAction("login"));
+    signupTab.addEventListener("click", () => setAction("signup"));
+
+    const configured =
+      firebaseConfig.apiKey !== "PASTE_WEB_API_KEY_HERE" &&
+      firebaseConfig.appId !== "PASTE_WEB_APP_ID_HERE";
+
+    if (!configured) {
+      showMessage("Setup needed: add your Firebase Web app's API key and App ID in this page.", "error");
+      submitButton.disabled = true;
+    } else {
+      auth = getAuth(initializeApp(firebaseConfig));
+      onAuthStateChanged(auth, (user) => {
+        authPanel.hidden = Boolean(user);
+        signedInPanel.hidden = !user;
+        if (user) {
+          document.querySelector("#account-name").textContent = user.displayName || "your account";
+        }
+      });
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!auth) return;
+
+      const username = form.elements.username.value.trim();
+      const password = form.elements.password.value;
+      submitButton.disabled = true;
+      showMessage(action === "signup" ? "Creating your account…" : "Signing in…");
+
+      try {
+        const response = await fetch("/api/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, username, password }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not sign in.");
+        await signInWithCustomToken(auth, result.customToken);
+        form.reset();
+        showMessage("Success.", "success");
+      } catch (error) {
+        showMessage(error instanceof Error ? error.message : "Something went wrong.", "error");
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+
+    document.querySelector("#sign-out").addEventListener("click", async () => {
+      if (auth) await signOut(auth);
+    });
+  </script>
 </body>
 </html>
